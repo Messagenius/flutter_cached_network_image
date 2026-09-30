@@ -84,7 +84,6 @@ class MultiImageStreamCompleter extends ImageStreamCompleter {
   bool __disposed = false;
 
   void _switchToNewCodec() {
-    _framesEmitted = 0;
     _timer = null;
     _handleCodecReady(_nextImageCodec!);
     _nextImageCodec = null;
@@ -92,6 +91,7 @@ class MultiImageStreamCompleter extends ImageStreamCompleter {
 
   void _handleCodecReady(ui.Codec codec) {
     _codec = codec;
+    _framesEmitted = 0;
 
     if (hasListeners) {
       _decodeNextFrameAndSchedule();
@@ -186,7 +186,13 @@ class MultiImageStreamCompleter extends ImageStreamCompleter {
   @override
   void addListener(ImageStreamListener listener) {
     __hadAtLeastOneListener = true;
-    if (!hasListeners && _codec != null) _decodeNextFrameAndSchedule();
+    // A static image that was already emitted is replayed by super.addListener;
+    // decoding it again creates a second image over the same web <img> element.
+    if (!hasListeners &&
+        _codec != null &&
+        (_framesEmitted == 0 || _codec!.frameCount > 1)) {
+      _decodeNextFrameAndSchedule();
+    }
     super.addListener(listener);
   }
 

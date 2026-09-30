@@ -718,6 +718,110 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets(
+    'emitted static image is replayed, not decoded again, on re-listen',
+    (WidgetTester tester) async {
+      final mockCodec = MockCodec();
+      mockCodec.frameCount = 1;
+      final codecStream = StreamController<Codec>();
+
+      final ImageStreamCompleter imageStream = MultiImageStreamCompleter(
+        codec: codecStream.stream,
+        scale: 1.0,
+      );
+
+      final emittedImages = <ImageInfo>[];
+      listener(ImageInfo image, bool synchronousCall) {
+        emittedImages.add(image);
+      }
+
+      imageStream.addListener(ImageStreamListener(listener));
+      final handle = imageStream.keepAlive();
+
+      codecStream.add(mockCodec);
+      await tester.idle();
+      mockCodec.completeNextFrame(FakeFrameInfo(Duration.zero, image20x10));
+      await tester.idle();
+
+      imageStream.removeListener(ImageStreamListener(listener));
+      imageStream.addListener(ImageStreamListener(listener));
+      await tester.idle();
+
+      expect(mockCodec.numFramesAsked, 1);
+      expect(emittedImages.length, 2);
+      expect(emittedImages[1].image.isCloneOf(image20x10), true);
+
+      handle.dispose();
+    },
+  );
+
+  testWidgets('static image not emitted yet is decoded on re-listen', (
+    WidgetTester tester,
+  ) async {
+    final mockCodec = MockCodec();
+    mockCodec.frameCount = 1;
+    final codecStream = StreamController<Codec>();
+
+    final ImageStreamCompleter imageStream = MultiImageStreamCompleter(
+      codec: codecStream.stream,
+      scale: 1.0,
+    );
+
+    listener(ImageInfo image, bool synchronousCall) {}
+    imageStream.addListener(ImageStreamListener(listener));
+    final handle = imageStream.keepAlive();
+
+    codecStream.add(mockCodec);
+    await tester.idle();
+    imageStream.removeListener(ImageStreamListener(listener));
+    mockCodec.completeNextFrame(FakeFrameInfo(Duration.zero, image20x10));
+    await tester.idle(); // frame arrives without listeners and is dropped
+
+    imageStream.addListener(ImageStreamListener(listener));
+    await tester.idle();
+
+    expect(mockCodec.numFramesAsked, 2);
+
+    handle.dispose();
+  });
+
+  testWidgets('codec that arrives without listeners is decoded on re-listen', (
+    WidgetTester tester,
+  ) async {
+    final firstCodec = MockCodec();
+    firstCodec.frameCount = 1;
+    final secondCodec = MockCodec();
+    secondCodec.frameCount = 1;
+    final codecStream = StreamController<Codec>();
+
+    final ImageStreamCompleter imageStream = MultiImageStreamCompleter(
+      codec: codecStream.stream,
+      scale: 1.0,
+    );
+
+    listener(ImageInfo image, bool synchronousCall) {}
+    imageStream.addListener(ImageStreamListener(listener));
+    final handle = imageStream.keepAlive();
+
+    codecStream.add(firstCodec);
+    await tester.idle();
+    firstCodec.completeNextFrame(FakeFrameInfo(Duration.zero, image20x10));
+    await tester.idle();
+
+    imageStream.removeListener(ImageStreamListener(listener));
+    codecStream.add(secondCodec);
+    await tester.idle();
+    expect(secondCodec.numFramesAsked, 0);
+
+    imageStream.addListener(ImageStreamListener(listener));
+    await tester.idle();
+
+    expect(firstCodec.numFramesAsked, 1);
+    expect(secondCodec.numFramesAsked, 1);
+
+    handle.dispose();
+  });
+
   testWidgets('multiple stream listeners', (WidgetTester tester) async {
     final mockCodec = MockCodec();
     mockCodec.frameCount = 2;
